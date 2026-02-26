@@ -127,7 +127,7 @@ class LayeredDiffusionDecodeRGBA(LayeredDiffusionDecode):
 
     def decode(self, samples, images, sd_version: str, sub_batch_size: int):
         image, mask = super().decode(samples, images, sd_version, sub_batch_size)
-        alpha = 1.0 - mask
+        alpha = mask
         # Inline join: concatenate RGB image with alpha channel to produce RGBA
         out_images = []
         for i in range(min(len(image), len(alpha))):
@@ -265,6 +265,17 @@ class LayeredDiffusionBase:
                 return ("diff", [v[0], {"pad_weight": True}])
             elif len(v) == 2 and v[0] == "diff":
                 return ("diff", [v[1][0], {"pad_weight": True}])
+            elif len(v) == 2 and v[0] == "lora":
+                # ComfyUI removed "lora" patch type from calculate_weight
+                # in the WeightAdapter refactor. Pre-compute up @ down into
+                # a "diff" patch so the model patcher can apply it.
+                weights = v[1]
+                up = weights[0]    # (out_dim, rank)
+                down = weights[1]  # (rank, in_dim)
+                if up is not None and down is not None:
+                    diff = torch.mm(up.float(), down.float()).to(up.dtype)
+                    return ("diff", [diff, {"pad_weight": True}])
+                return v
             else:
                 return v
 
